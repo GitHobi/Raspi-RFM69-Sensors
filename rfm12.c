@@ -42,6 +42,9 @@ char buffer[PAKET_LEN] =
 //#include <fcntl.h>
 //#include <sys/ioctl.h>
 //#include <linux/spi/spidev.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+
 
 #include "config.h"
 
@@ -50,9 +53,11 @@ char buffer[PAKET_LEN] =
 
 #include "rfm12_communication.h"
 
+char path[200] = "/var/www/html/wetter";
 
 static volatile int keepRunning = 1;
 static volatile int verbose = 0;
+static volatile int foreground = 0;
 
 void intHandler(int dummy) 
 {
@@ -204,8 +209,6 @@ void readData ()
                 {
                     //fprintf (stdout, "%02i: %02X %c\n", i, dataPaket.buffer[i], dataPaket.buffer[i]);
                 }
-
-				char path[200] = "/usr/share/nginx/www/wetter";
 				
                 if (paketLen == 25 )
                 {
@@ -250,7 +253,55 @@ void readData ()
     }
 }
 
+static void skeleton_daemon()
+{
+	pid_t pid;
 
+	/* Fork off the parent process */
+	pid = fork();
+
+	/* An error occurred */
+	if (pid < 0)
+		exit(EXIT_FAILURE);
+
+	/* Success: Let the parent terminate */
+	if (pid > 0)
+		exit(EXIT_SUCCESS);
+
+	/* On success: The child process becomes session leader */
+	if (setsid() < 0)
+		exit(EXIT_FAILURE);
+
+	/* Catch, ignore and handle signals */
+	//TODO: Implement a working signal handler */
+	signal(SIGCHLD, intHandler);
+	signal(SIGHUP, intHandler);
+
+	/* Fork off for the second time*/
+	pid = fork();
+
+	/* An error occurred */
+	if (pid < 0)
+		exit(EXIT_FAILURE);
+
+	/* Success: Let the parent terminate */
+	if (pid > 0)
+		exit(EXIT_SUCCESS);
+
+	/* Set new file permissions */
+	umask(0);
+
+	/* Change the working directory to the root directory */
+	/* or another appropriated directory */
+	chdir("/");
+
+	/* Close all open file descriptors */
+	int x;
+	for (x = sysconf(_SC_OPEN_MAX); x >= 0; x--)
+	{
+		close(x);
+	}
+}
 
 int rfm_wait()
 {
@@ -299,12 +350,15 @@ int main(int argc, char *argv[])
 
 	int opt;
 
-	while ((opt = getopt(argc, argv, "v")) != -1) 
+	while ((opt = getopt(argc, argv, "fv")) != -1) 
 	{
 		switch (opt) 
 		{
 			case 'v':
 				verbose = 1;
+				break;
+			case 'f':
+				foreground = 1;
 				break;
 			default: /* '?' */
 				fprintf(stderr, "Usage: %s [-v]\n", argv[0]);
@@ -324,6 +378,15 @@ int main(int argc, char *argv[])
 
 
 	rfm_wait();
+
+
+
+	if (foreground == 0)
+	{
+		printf("daemonzing ...\n");
+		skeleton_daemon();
+	}
+
 
 	signal(SIGHUP, intHandler);
 	signal(SIGINT, intHandler);
