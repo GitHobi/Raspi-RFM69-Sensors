@@ -44,7 +44,7 @@ char buffer[PAKET_LEN] =
 //#include <linux/spi/spidev.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-
+#include <syslog.h>
 
 #include "config.h"
 
@@ -61,6 +61,7 @@ static volatile int foreground = 0;
 
 void intHandler(int dummy) 
 {
+	syslog(LOG_NOTICE, "Interrupt detected ... will terminate!");
 	keepRunning = 0;
 }
 
@@ -226,8 +227,11 @@ void readData ()
 					char tmp[2000];
 					sprintf ( tmp, "rrdtool update %s/sensor-%it.rrd N:%f", path, dataPaket.dataGramm25.SensorNr & 0x0F, stringToDouble(dataPaket.dataGramm25.SensorValue1, 6));
 					system ( tmp );
+					if (verbose) syslog(LOG_NOTICE, tmp);
+
 					sprintf ( tmp, "rrdtool update %s/sensor-%if.rrd N:%f", path, dataPaket.dataGramm25.SensorNr & 0x0F, stringToDouble(dataPaket.dataGramm25.SensorValue2, 6));
 					system ( tmp );
+					if (verbose) syslog(LOG_NOTICE, tmp);
                 }
                 else
                 {
@@ -238,6 +242,8 @@ void readData ()
 					char tmp[2000];
 					sprintf ( tmp, "rrdtool update %s/sensor-%i.rrd N:%f",  path, dataPaket.dataGramm24.SensorNr & 0x0F, stringToDouble(dataPaket.dataGramm24.SensorValue1, 6));
 					system ( tmp );
+
+					if ( verbose) syslog(LOG_NOTICE, tmp);
                 }
 
 				if (verbose) fprintf(stdout, "---------------------\n");
@@ -272,11 +278,6 @@ static void skeleton_daemon()
 	if (setsid() < 0)
 		exit(EXIT_FAILURE);
 
-	/* Catch, ignore and handle signals */
-	//TODO: Implement a working signal handler */
-	signal(SIGCHLD, intHandler);
-	signal(SIGHUP, intHandler);
-
 	/* Fork off for the second time*/
 	pid = fork();
 
@@ -293,7 +294,7 @@ static void skeleton_daemon()
 
 	/* Change the working directory to the root directory */
 	/* or another appropriated directory */
-	chdir("/");
+	chdir("/tmp");
 
 	/* Close all open file descriptors */
 	int x;
@@ -301,11 +302,16 @@ static void skeleton_daemon()
 	{
 		close(x);
 	}
+
+	/* Catch, ignore and handle signals */
+	//TODO: Implement a working signal handler */
+	//signal(SIGCHLD, intHandler);
+	signal(SIGHUP, intHandler);
 }
 
 int rfm_wait()
 {
-	if (verbose) fprintf(stdout, "Waiting for data (wiringPi) ...\n");
+	if (verbose) syslog(LOG_NOTICE, "Waiting for data (wiringPi) ...");
 
     wiringPiISR (RFM12_nIRQ, INT_EDGE_RISING, &readData) ;
 
@@ -320,10 +326,12 @@ int rfm_wait()
 void spiSetup ()
 {
 
-	if (verbose) fprintf(stdout, "setting up SPI ...\n");
+	if (verbose) syslog(LOG_NOTICE, "setting up SPI ...");
     if ((myFd = wiringPiSPISetup (SPI_CHAN, 500000)) < 0)
     {
-        fprintf (stderr, "Can't open the SPI bus: %s\n", strerror (errno)) ;
+		char msg[1024];
+        sprintf (msg, "Can't open the SPI bus: %s", strerror (errno)) ;
+		syslog(LOG_NOTICE, msg);
         exit (EXIT_FAILURE) ;
     }
 }
@@ -336,7 +344,7 @@ void spiSetup ()
  */
 int init_ports()
 {
-	if (verbose) fprintf(stdout, "setting up ports with wiringPi...\n");
+	if (verbose) syslog(LOG_NOTICE, "setting up ports with wiringPi...");
 
     pinMode (6, INPUT);
     pinMode (5, INPUT);
@@ -366,29 +374,28 @@ int main(int argc, char *argv[])
 			}
 	}
 
-	if ( verbose ) fprintf(stdout, "Starting Receiver!\n");
+	if (foreground == 0)
+	{
+		skeleton_daemon();
+	}
 
-	if (verbose) fprintf(stdout, "Setting up wiringPi!\n");
+	/* Open the log file */
+	openlog("RFM69-Receiver", LOG_PID, LOG_DAEMON);
+	syslog(LOG_NOTICE, "Process started!");
+
+	if (verbose) syslog(LOG_NOTICE, "Starting Receiver!");
+
+	if (verbose) syslog(LOG_NOTICE, "Setting up wiringPi!\n");
 	wiringPiSetup () ;
 	spiSetup () ;
 	init_ports();
 
-	if (verbose) printf("setting up RFM12 ...\n");
+	if (verbose) syslog(LOG_NOTICE, "setting up RFM12 ...\n");
 	init_rfm12();
 
 
 	rfm_wait();
 
-
-
-	if (foreground == 0)
-	{
-		printf("daemonzing ...\n");
-		skeleton_daemon();
-	}
-
-
-	signal(SIGHUP, intHandler);
 	signal(SIGINT, intHandler);
 	signal(SIGKILL, intHandler);
 
@@ -397,7 +404,9 @@ int main(int argc, char *argv[])
         delay ( 1000 );
     }
 
-	if (verbose) fprintf(stdout, "Terminating on request!\n");
+
+
+	if (verbose) syslog(LOG_NOTICE, "Terminating on request!\n");
 
   	return 1 ;
 }
