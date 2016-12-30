@@ -2,27 +2,28 @@ EXTRA_INCLUDE=
 EXTRA_LIBDIR=
 ARGS=-Wall -O4 -std=c99
 
+TMP=/dev/shm
 
-all:	rfm12
+all:	rfm69
 
-rfm12.o:	rfm12.c
-	gcc -c $^ -lwiringPi -o rfm12.o $(ARGS) $(EXTRA_INCLUDE)
+$(TMP)/main.o:	main.c config.h
+	gcc -c $< -lwiringPi -o $@ $(ARGS) $(EXTRA_INCLUDE)
 
-rfm12_communication.o:	rfm12_communication.c rfm12_communication.h config.h
-	gcc -c $^ -lwiringPi  $(ARGS) $(EXTRA_INCLUDE)
-
-
-rfm12:	rfm12.o rfm12_communication.o
-		gcc $^ -lwiringPi -o rfm12 $(ARGS) $(EXTRA_LIBDIR)
+$(TMP)/rfm12_communication.o:	rfm12_communication.c rfm12_communication.h config.h 
+	gcc -c $< -o $@ -lwiringPi  $(ARGS) $(EXTRA_INCLUDE)
 
 
-run:	rfm12
-	sudo ./rfm12
+rfm69:	$(TMP)/main.o $(TMP)/rfm12_communication.o
+		gcc $^ -lwiringPi -o $@ $(ARGS) $(EXTRA_LIBDIR)
+
+
+run:	rfm69
+	sudo ./rfm69
 
 clean:
 	rm -f *.o
 	rm -f *.gch
-	rm -f rfm12
+	rm -f rfm69
 
 init:
 	sudo echo 25 > /sys/class/gpio/export
